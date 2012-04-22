@@ -1,0 +1,4 @@
+scalatron
+=========
+
+My Scalatron bot!
