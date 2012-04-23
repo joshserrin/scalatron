@@ -110,10 +110,10 @@ object JoshBot {
     def toResponse: String
   }
   case class Explore(cell: Cell) extends MoveTo {
-    override def toResponse = "Move(dx=%s,dy=%s)|Say(text=Exploring)".format(cell.dx, cell.dy)
+    override def toResponse = "Move(dx=%s,dy=%s)|Status(text=Exploring)".format(cell.dx, cell.dy)
   }
   case class Hunt(cell: Cell) extends MoveTo {
-    override def toResponse = "Move(dx=%s,dy=%s)|Say(text=Hunting)".format(cell.dx, cell.dy)
+    override def toResponse = "Move(dx=%s,dy=%s)|Status(text=Hunting)".format(cell.dx, cell.dy)
   }
   /**
    * Determines where to go to next.  First the highest values and closest items
