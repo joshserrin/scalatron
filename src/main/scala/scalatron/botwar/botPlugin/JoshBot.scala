@@ -76,7 +76,7 @@ object JoshBot {
       if (!isAccessible) Double.NegativeInfinity // Can't reach it, maybe blocked by walls?
       if (isMyMiniBot) 0 // mini-bot disappears, energy added to bot
       else if (isWall) -10 // bonk, stunned for 4 cycles, loses 10 EU
-      else if (isEmpty) 1 // small benefit to move // FIXME this will cause us to bounce around.  If nothing else is available, intelligently move to some random location!
+      else if (isEmpty) 0 // small benefit to move // FIXME this will cause us to bounce around.  If nothing else is available, intelligently move to some random location!
       else if (isZugar) 100 // +100, plant disappears
       else if (isFluppet) 200 // +200, beast disappears
       else if (isEnemyMiniBot) 150 // +150, mini-bot disappears
@@ -141,20 +141,37 @@ object JoshBot {
       override def compare(a: (Cell, Fitness), b: (Cell, Fitness)) = a._2.compareTo(b._2)
     }
     def bestMove: MoveTo = {
-      val cellsWithBenefit = view.cells.withFilter(_.points > 0)
-      val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
-      val (cell, highestPayoff) = cellsWithFitness.max
-      MoveTo(cell)
+      val cellsWithBenefit = view.cells.filter(_.points > 0)
+      if (cellsWithBenefit.isEmpty) {
+        // do random walk!
+        implicit def shuffle(l: Seq[Cell]) = new {
+          def shuffle: Seq[Cell] = {
+            import scala.collection.JavaConverters._
+            val cells = new java.util.ArrayList[Cell](l.asJava)
+            java.util.Collections.shuffle(cells)
+            cells.asScala
+          }
+        }
+        implicit val FurthestCell = new Ordering[Cell] {
+          def compare(a: Cell, b: Cell) = {
+            val masterLoc = (0, 0)
+            val aDist = euclideanDistance(masterLoc, (a.dx, a.dy))
+            val bDist = euclideanDistance(masterLoc, (b.dx, b.dy))
+            aDist.compareTo(bDist)
+          }
+        }
+        val randomCell = view.cells.filter(_.isAccessible).shuffle.max
+        MoveTo(randomCell)
+      } else {
+        val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
+        val (cell, highestPayoff) = cellsWithFitness.max
+        MoveTo(cell)
+      }
     }
     private def fitness(cell: Cell): Fitness = {
       // should also tak into consideration the distance between the bot and the cell
-      def euclideanDistance: Double = {
-        val (p1, p2) = (0, 0)
-        val (q1, q2) = (cell.dx, cell.dy)
-        implicit def squared(d: Int) = new { def squared: Int = d * d }
-        Math.sqrt((p1 - q1).squared + (p2 - q2).squared)
-      }
-      def normalized(points: Int): Double = points / euclideanDistance
+      def distance: Double = euclideanDistance((0, 0), (cell.dx, cell.dy))
+      def normalized(points: Int): Double = points / distance
       normalized(cell.points)
     }
   }
