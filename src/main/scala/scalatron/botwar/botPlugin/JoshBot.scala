@@ -40,15 +40,17 @@ object JoshBot {
   case class MasterBot extends Bot {
     override def respond(worldState: String): String = worldState match {
       case React(entity, time, view, energy) => {
-        println("Master told to respond")
         val navigator = Navigator(View(view))
-        println("Navigator built!  Asking for best move")
         val move = navigator.bestMove
         move.toResponse
       }
       case _ => ""
     }
   }
+  /**
+   * This is basically a 2D space where the MasterBot's location is the center
+   * (0,0).  All cells are deltas from the master's location.
+   */
   case class View(view: String) {
     val cells: Seq[Cell] = {
       val rowLength = Math.sqrt(view.length).intValue
@@ -60,19 +62,19 @@ object JoshBot {
         startRowIndex = row * rowLength
         endRowIndex = startRowIndex + rowLength - 1
         rowString = view.substring(startRowIndex, endRowIndex)
-        //        _ = println(rowString)
         column <- 0 to rowString.length - 1
         cellContents = rowString.charAt(column).toString
         dx = delta(column)
-        //        _ = println("%s,%s maps to %s,%s".format(row, column, dy, dx))
       } yield (new Cell(cellContents, dx, dy, this))
     }
-    //    cells.foreach(c => println(c.dx + "," + c.dy))
     def canMoveTo(dx: Int, dy: Int): Boolean =
       cells.find(cell => cell.dx == dx && cell.dy == dy).map(_.isAccessible).getOrElse(false)
   }
   // dx and dy are the deltas to move from the MasterBot's position (0, 0)
   case class Cell(s: String, dx: Int, dy: Int, view: View) {
+    /**
+     * the number of EU's to be received if the Master lands on this cell
+     */
     val points: Int = {
       if (!isAccessible) Double.NegativeInfinity // Can't reach it, maybe blocked by walls?
       if (isMyMiniBot) 0 // mini-bot disappears, energy added to bot
@@ -87,6 +89,10 @@ object JoshBot {
       else if (isMaster) 0
       else 0 // isUnknown
     }
+    /**
+     * True if this cell represents something that wouldn't reduce the number of
+     * EUs or bonk the Master
+     */
     def isAccessible = isEmpty || isMyMiniBot || isZugar || isFluppet || isEnemyMiniBot || isMaster
     def isMyMiniBot = s == "S"
     def isWall = s == "W"
@@ -101,12 +107,12 @@ object JoshBot {
     def isUnknown = s == "?"
   }
   case class MoveTo(cell: Cell) {
-    def toResponse: String = {
-      val response = "Move(dx=%s,dy=%s)".format(cell.dx, cell.dy)
-      println(response)
-      response
-    }
+    def toResponse: String = "Move(dx=%s,dy=%s)".format(cell.dx, cell.dy)
   }
+  /**
+   * Determines where to go to next.  First the highest values and closest items
+   * are considered.  If nothing is value is seen this tries to explore the area.
+   */
   case class Navigator(view: View) {
     val whereIAm = view.cells.find(c => c.dx == 0 && c.dy == 0).get
     import org.jgrapht._
@@ -146,22 +152,21 @@ object JoshBot {
     implicit val moveOrdering = new Ordering[(Cell, Fitness)] {
       override def compare(a: (Cell, Fitness), b: (Cell, Fitness)) = a._2.compareTo(b._2)
     }
-    def explore = MoveTo(whereIAm) // TODO
     def bestMove: MoveTo = {
       val cellsWithBenefit = view.cells.filter(_.points > 0)
       if (cellsWithBenefit.isEmpty) {
-        implicit def shuffle(l: Seq[Cell]) = new {
-          def shuffle: Seq[Cell] = {
-            import scala.collection.JavaConverters._
-            import java.util._
-            val jList = new ArrayList(l.asJava)
-            Collections.shuffle(jList)
-            jList.asScala
-          }
-        }
         // TODO: something more sophisticated than a random jump
-        val destination = view.cells.filter(_.isAccessible).shuffle(0)
-        createMove(destination)
+        // Shuffle so that we don't always value certain quadrants
+        def furthestFirst(a: Cell, b: Cell): Boolean = {
+          val origin = (whereIAm.dx, whereIAm.dy)
+          val aCoords = (a.dx, a.dy)
+          val bCoords = (b.dx, b.dy)
+          val aDist = euclideanDistance(origin, aCoords)
+          val bDist = euclideanDistance(origin, bCoords)
+          aDist > bDist
+        }
+        val destination = view.cells.filter(_.isAccessible).sortWith(furthestFirst)(0)
+        MoveTo(destination)
       } else {
         val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
         val (destination, withHighestPayoff) = cellsWithFitness.max
