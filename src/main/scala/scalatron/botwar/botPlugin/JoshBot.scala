@@ -41,78 +41,86 @@ object JoshBot {
     override def respond(worldState: String): String = worldState match {
       case React(entity, time, view, energy) => {
         val navigator = Navigator(View(view))
-
         val move = navigator.bestMove
+        println(move)
         move.toResponse
       }
       case _ => ""
     }
   }
   case class View(view: String) {
-    val rowLength = Math.sqrt(view.length).intValue
-    val worldView: List[List[String]] = view.sliding(rowLength, rowLength).map(_.toCharArray.map("" + _).toList).toList
+    val cells: Seq[Cell] = {
+      val rowLength = Math.sqrt(view.length).intValue
+      val halfRowLength = rowLength / 2
+      def delta(i: Int): Int = if (i < halfRowLength) -(halfRowLength - i) else i - halfRowLength
+      for {
+        row <- 0 to rowLength - 1
+        dy = delta(row)
+        startRowIndex = row * rowLength
+        endRowIndex = startRowIndex + rowLength - 1
+        rowString = view.substring(startRowIndex, endRowIndex)
+        //        _ = println(rowString)
+        column <- 0 to rowString.length - 1
+        cellContents = rowString.charAt(column).toString
+        dx = delta(column)
+        _ = println("%s,%s turned into %s,%s".format(row, column, dy, dx))
+      } yield (new Cell(cellContents, dx, dy))
+    }
+    //    cells.foreach(c => println(c.dx + "," + c.dy))
   }
-  case class Cell(dx: Int, dy: Int, view: View) {
-
+  // dx and dy are the deltas to move from the MasterBot's position (0, 0)
+  case class Cell(s: String, dx: Int, dy: Int) {
+    val points: Int = {
+      if (!isAccessible) Double.NegativeInfinity // Can't reach it, maybe blocked by walls?
+      if (isMyMiniBot) 0 // mini-bot disappears, energy added to bot
+      else if (isWall) -10 // bonk, stunned for 4 cycles, loses 10 EU
+      else if (isEmpty) 1 // small benefit to move
+      else if (isZugar) 100 // +100, plant disappears
+      else if (isFluppet) 200 // +200, beast disappears
+      else if (isEnemyMiniBot) 150 // +150, mini-bot disappears
+      else if (isEnemy) 0 // bonk
+      else if (isToxifera) -100 // -100, plant disappears
+      else if (isSnorg) -150 //-150, bonk, beast also damaged
+      else if (isMaster) 0
+      else 0 // isUnknown
+    }
+    def isAccessible = true // TODO
+    def isMyMiniBot = s == "S"
+    def isWall = s == "W"
+    def isEmpty = s == "_"
+    def isZugar = s == "P"
+    def isFluppet = s == "B"
+    def isEnemyMiniBot = s == "s"
+    def isEnemy = s == "m"
+    def isToxifera = s == "p"
+    def isSnorg = s == "b"
+    def isMaster = s == "M"
+    def isUnknown = s == "?"
   }
   case class Move(cell: Cell) {
     def toResponse: String = "Move(dx=%s,dy=%s)".format(cell.dx, cell.dy)
   }
   case class Navigator(view: View) {
-    val me = view.rowLength / 2
-
     type Fitness = Double
-    implicit val moveOrdering = new Ordering[(Move, Fitness)] {
-      override def compare(a: (Move, Fitness), b: (Move, Fitness)) = a._2.compareTo(b._2)
+    implicit val moveOrdering = new Ordering[(Cell, Fitness)] {
+      override def compare(a: (Cell, Fitness), b: (Cell, Fitness)) = a._2.compareTo(b._2)
     }
-    implicit def shuffle(seq: Seq[(Move, Double)]) = new {
-      def shuffle: Seq[(Move, Fitness)] = {
-        import scala.collection.JavaConverters._
-        val jArray = java.util.Arrays.asList(seq: _*)
-        java.util.Collections.shuffle(jArray)
-        jArray.asScala
-      }
+    def bestMove: Move = {
+      val cellsWithBenefit = view.cells.withFilter(_.points > 0)
+      val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
+      val (cell, highestPayoff) = cellsWithFitness.max
+      Move(cell)
     }
-    def bestMove: Move = allMoves.map(m => (m, fitness(m))).shuffle.max._1
-    val outlook = view.rowLength / 2
-    def allMoves: Seq[Move] =
-      for {
-        dx <- -outlook to outlook
-        dy <- -outlook to outlook
-      } yield (Move(Cell(dx, dy, view)))
-
-    implicit def isMyMiniBot(s: String) = new { def isMyMiniBot = s == "S" }
-    implicit def isWall(s: String) = new { def isWall = s == "W" }
-    implicit def isUnknown(s: String) = new { def isUnknown = s == "?" }
-    implicit def isEmpty(s: String) = new { def isEmptyCell = s == "_" }
-    implicit def isZugar(s: String) = new { def isZugar = s == "P" }
-    implicit def isFluppet(s: String) = new { def isFluppet = s == "B" }
-    implicit def isEnemyMiniBot(s: String) = new { def isEnemyMiniBot = s == "s" }
-    implicit def isEnemy(s: String) = new { def isEnemy = s == "m" }
-    implicit def isToxifera(s: String) = new { def isToxifera = s == "p" }
-    implicit def isSnorg(s: String) = new { def isSnorg = s == "b" }
-    implicit def isMe(s: String) = new { def isMe = s == "M" }
-    def fitness(move: Move): Fitness = {
-      import move.cell
-      val x = me + cell.dx
-      val y = me + cell.dy
-      def isOutOfView(z: Int) = z < 0 || z >= view.rowLength
-      if (isOutOfView(x) || isOutOfView(y)) Double.NegativeInfinity // Can't move there!
-      else {
-        val cell = view.worldView(y)(x)
-        if (cell.isUnknown) -10
-        else if (cell.isEmptyCell) 0
-        else if (cell.isWall) -10 //...a wall => bonk, stunned for 4 cycles, loses 10 EU
-        else if (cell.isEnemy) -10 //...another player's master bot => bonk
-        else if (cell.isMyMiniBot) 20 //...one of its own mini-bots => mini-bot disappears, energy added to bot
-        else if (cell.isEnemyMiniBot) 150 //...another player's mini-bot => +150, mini-bot disappears
-        else if (cell.isZugar) 100 //...a Zugar => +100, plant disappears
-        else if (cell.isToxifera) -100 //...a Toxifera => -100, plant disappears
-        else if (cell.isFluppet) 200 //...a Fluppet => +200, beast disappears
-        else if (cell.isSnorg) -150 //...a Snorg => -150, bonk, beast also damaged\
-        else if (cell.isMe) Double.NegativeInfinity // That's where I current am!
-        else throw new IllegalArgumentException("Unknown cell: " + cell)
+    private def fitness(cell: Cell): Fitness = {
+      // should also tak into consideration the distance between the bot and the cell
+      def euclideanDistance: Double = {
+        val (p1, p2) = (0, 0)
+        val (q1, q2) = (cell.dx, cell.dy)
+        implicit def squared(d: Int) = new { def squared: Int = d * d }
+        Math.sqrt((p1 - q1).squared + (p2 - q2).squared)
       }
+      def normalized(points: Int): Double = points / euclideanDistance
+      normalized(cell.points)
     }
   }
 
