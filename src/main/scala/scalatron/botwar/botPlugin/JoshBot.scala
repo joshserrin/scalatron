@@ -42,7 +42,7 @@ object JoshBot {
       case React(entity, time, view, energy) => {
         val navigator = Navigator(View(view))
         val move = navigator.bestMove
-        println(move)
+        //        println(move)
         move.toResponse
       }
       case _ => ""
@@ -63,18 +63,20 @@ object JoshBot {
         column <- 0 to rowString.length - 1
         cellContents = rowString.charAt(column).toString
         dx = delta(column)
-        _ = println("%s,%s turned into %s,%s".format(row, column, dy, dx))
-      } yield (new Cell(cellContents, dx, dy))
+        //        _ = println("%s,%s maps to %s,%s".format(row, column, dy, dx))
+      } yield (new Cell(cellContents, dx, dy, this))
     }
     //    cells.foreach(c => println(c.dx + "," + c.dy))
+    def canMoveTo(dx: Int, dy: Int): Boolean =
+      cells.find(cell => cell.dx == dx && cell.dy == dy).map(_.isAccessible).getOrElse(false)
   }
   // dx and dy are the deltas to move from the MasterBot's position (0, 0)
-  case class Cell(s: String, dx: Int, dy: Int) {
+  case class Cell(s: String, dx: Int, dy: Int, view: View) {
     val points: Int = {
       if (!isAccessible) Double.NegativeInfinity // Can't reach it, maybe blocked by walls?
       if (isMyMiniBot) 0 // mini-bot disappears, energy added to bot
       else if (isWall) -10 // bonk, stunned for 4 cycles, loses 10 EU
-      else if (isEmpty) 1 // small benefit to move
+      else if (isEmpty) 1 // small benefit to move // FIXME this will cause us to bounce around.  If nothing else is available, intelligently move to some random location!
       else if (isZugar) 100 // +100, plant disappears
       else if (isFluppet) 200 // +200, beast disappears
       else if (isEnemyMiniBot) 150 // +150, mini-bot disappears
@@ -84,7 +86,7 @@ object JoshBot {
       else if (isMaster) 0
       else 0 // isUnknown
     }
-    def isAccessible = true // TODO
+    def isAccessible = true //!isWall || !isEnemy
     def isMyMiniBot = s == "S"
     def isWall = s == "W"
     def isEmpty = s == "_"
@@ -97,19 +99,52 @@ object JoshBot {
     def isMaster = s == "M"
     def isUnknown = s == "?"
   }
-  case class Move(cell: Cell) {
-    def toResponse: String = "Move(dx=%s,dy=%s)".format(cell.dx, cell.dy)
+  case class MoveTo(cell: Cell) {
+    def toResponse: String = {
+      val (currentX, currentY) = (0.0, 0.0)
+      def calculateSlope(destX: Int, destY: Int): Double = {
+        val deltaX = destX - currentX
+        val deltaY = currentY - destY // remember, Y is inverted!
+        if (deltaX != 0) deltaY / deltaX else if (deltaY > 0) 1 else -1
+      }
+      val slope = calculateSlope(cell.dx, cell.dy)
+      val (destX, destY) = (cell.dx, cell.dy)
+      // If I needed to move in a certan direction which two points are accessible (at least my own location of 0)
+      def possibilities(current: Double, dest: Double) = if (current > dest) List(0, -1) else List(0, 1)
+      val moveXPossibilities = possibilities(currentX, destX)
+      val moveYPossibilities = possibilities(currentY, destY)
+      // The (three) possible moves that I could make taking out of consideration sitting still.
+      val possibleMoves: List[(Int, Int)] = {
+        for {
+          x <- moveXPossibilities
+          y <- moveYPossibilities
+        } yield ((x, y))
+      } filterNot { case (x, y) => x == 0 && y == 0 }
+      def closestToSlope(a: (Int, Int), b: (Int, Int)): Boolean = {
+        val slopeA = calculateSlope(a._1, a._2)
+        val slopeB = calculateSlope(b._1, b._2)
+        val deltaA = (slopeA - slope).abs
+        val deltaB = (slopeB - slope).abs
+        deltaA < deltaB
+      }
+      // Order the moves so that the first is closest to the slope that I am supposed to travel
+      val orderedMoves = possibleMoves.sortWith(closestToSlope)
+      // The best move is the first move closest to my desired slope that I can actually move it
+      val bestMove = orderedMoves find { case (dx, dy) => cell.view.canMoveTo(dx, dy) }
+      val (moveX, moveY) = bestMove.get // assumes to get an answer.  if no answer do random walk?
+      "Move(dx=%s,dy=%s)".format(moveX, moveY)
+    }
   }
   case class Navigator(view: View) {
     type Fitness = Double
     implicit val moveOrdering = new Ordering[(Cell, Fitness)] {
       override def compare(a: (Cell, Fitness), b: (Cell, Fitness)) = a._2.compareTo(b._2)
     }
-    def bestMove: Move = {
+    def bestMove: MoveTo = {
       val cellsWithBenefit = view.cells.withFilter(_.points > 0)
       val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
       val (cell, highestPayoff) = cellsWithFitness.max
-      Move(cell)
+      MoveTo(cell)
     }
     private def fitness(cell: Cell): Fitness = {
       // should also tak into consideration the distance between the bot and the cell
