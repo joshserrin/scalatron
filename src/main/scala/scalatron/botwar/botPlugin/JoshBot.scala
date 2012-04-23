@@ -11,7 +11,7 @@ object JoshBot {
 
   val Welcome = """Welcome\(name=(.+),path=(.+),apocalypse=(\d+),round=(\d+)\)""".r
   val React = """React\(entity=(.+),time=(\d+),view=(.+),energy=(.+)\)""".r
-  val ReactBot = """React\(entity=(.+),time=(\d+),view=(.+),energy=(\d+),dx=(\d+),dy=(\d+)\)""".r
+  val ReactBot = """React\(entity=(.+),time=(\d+),energy=(.+),dx=(.+),dy=(.+),view=(.+)\)""".r
   val Goodbye = """Goodbye\(energy=(.+)\)""".r
 
   private val bots = Seq(MasterBot, MissileLauncher, Missile)
@@ -23,33 +23,28 @@ object JoshBot {
   }
   object MasterBot extends Bot {
     override def respond(worldState: String): String = worldState match {
-      case React(entity, time, view, energy) => {
-        val navigator = Navigator(View(view))
-        val move = navigator.bestMove
-        move.toResponse
-      }
+      case React(entity, time, view, energy) => Navigator(View(view)).bestMove.toResponse
       case _ => ""
     }
   }
   object MissileLauncher extends Bot {
+    val useEnergy = 100
     override def respond(worldState: String): String = worldState match {
-      case React(entity, time, viewString, energy) if energy.toInt > 100 => {
-        val view = View(viewString)
-        val useEnergy = 100
-        view.cells.filter(_.isEnemy).map(Missile.response(_, useEnergy)).mkString("|")
-      }
+      case React(entity, time, viewString, energy) if energy.toInt > 100 =>
+        View(viewString).cells.filter(_.isEnemy).map(Missile.response(_, useEnergy)).mkString("|")
       case _ => ""
     }
   }
   object Missile extends Bot {
+    val ID = "Missile"
     def response(enemyLocation: Cell, energy: Int): String = {
       import enemyLocation._
-      "Spawn(dx=%s,dy=%s,name=%s,energy=%s)".format(dx, dy, "Slave_-%s-%s".format(dx, dy), energy)
+      "Spawn(dx=%s,dy=%s,name=%s,energy=%s)".format(dx, dy, ID, energy)
     }
 
     override def respond(worldState: String): String = worldState match {
-      case ReactBot(entity, time, view, energy, dx, dy) => {
-        println("Bot asked to respond!")
+      case ReactBot(entity, time, energy, dx, dy, view) if entity == ID => {
+        // Find closest thing to blow up and blow it up!
         ""
       }
       case _ => ""
