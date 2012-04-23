@@ -40,9 +40,10 @@ object JoshBot {
   case class MasterBot extends Bot {
     override def respond(worldState: String): String = worldState match {
       case React(entity, time, view, energy) => {
+        println("Master told to respond")
         val navigator = Navigator(View(view))
+        println("Navigator built!  Asking for best move")
         val move = navigator.bestMove
-        //        println(move)
         move.toResponse
       }
       case _ => ""
@@ -86,7 +87,7 @@ object JoshBot {
       else if (isMaster) 0
       else 0 // isUnknown
     }
-    def isAccessible = true //!isWall || !isEnemy
+    def isAccessible = isEmpty || isMyMiniBot || isZugar || isFluppet || isEnemyMiniBot || isMaster
     def isMyMiniBot = s == "S"
     def isWall = s == "W"
     def isEmpty = s == "_"
@@ -101,72 +102,80 @@ object JoshBot {
   }
   case class MoveTo(cell: Cell) {
     def toResponse: String = {
-      val (currentX, currentY) = (0.0, 0.0)
-      def calculateSlope(destX: Int, destY: Int): Double = {
-        val deltaX = destX - currentX
-        val deltaY = currentY - destY // remember, Y is inverted!
-        if (deltaX != 0) deltaY / deltaX else if (deltaY > 0) 1 else -1
-      }
-      val slope = calculateSlope(cell.dx, cell.dy)
-      val (destX, destY) = (cell.dx, cell.dy)
-      // If I needed to move in a certan direction which two points are accessible (at least my own location of 0)
-      def possibilities(current: Double, dest: Double) = if (current > dest) List(0, -1) else List(0, 1)
-      val moveXPossibilities = possibilities(currentX, destX)
-      val moveYPossibilities = possibilities(currentY, destY)
-      // The (three) possible moves that I could make taking out of consideration sitting still.
-      val possibleMoves: List[(Int, Int)] = {
-        for {
-          x <- moveXPossibilities
-          y <- moveYPossibilities
-        } yield ((x, y))
-      } filterNot { case (x, y) => x == 0 && y == 0 }
-      def closestToSlope(a: (Int, Int), b: (Int, Int)): Boolean = {
-        val slopeA = calculateSlope(a._1, a._2)
-        val slopeB = calculateSlope(b._1, b._2)
-        val deltaA = (slopeA - slope).abs
-        val deltaB = (slopeB - slope).abs
-        deltaA < deltaB
-      }
-      // Order the moves so that the first is closest to the slope that I am supposed to travel
-      val orderedMoves = possibleMoves.sortWith(closestToSlope)
-      // The best move is the first move closest to my desired slope that I can actually move it
-      val bestMove = orderedMoves find { case (dx, dy) => cell.view.canMoveTo(dx, dy) }
-      val (moveX, moveY) = bestMove.get // assumes to get an answer.  if no answer do random walk?
-      "Move(dx=%s,dy=%s)".format(moveX, moveY)
+      val response = "Move(dx=%s,dy=%s)".format(cell.dx, cell.dy)
+      println(response)
+      response
     }
   }
   case class Navigator(view: View) {
+    val whereIAm = view.cells.find(c => c.dx == 0 && c.dy == 0).get
+    import org.jgrapht._
+    import org.jgrapht.graph._
+    case class Edge(src: Cell, dest: Cell) extends DefaultWeightedEdge {
+      override def getWeight: Double = 1 // Nonsense weight for now
+    }
+    val graph: Graph[Cell, Edge] = {
+      class MyEdgeFactory extends EdgeFactory[Cell, Edge] {
+        override def createEdge(src: Cell, dest: Cell): Edge = new Edge(src, dest)
+      }
+      val graph: WeightedGraph[Cell, Edge] = new DirectedWeightedMultigraph(new MyEdgeFactory)
+      def addAllVertices: Unit = view.cells.foreach(graph.addVertex(_))
+      def addAllEdges: Unit = {
+        def neighborsOf(cell: Cell): Seq[Cell] = {
+          def isNeighbor(potentialNeighbor: Cell): Boolean = {
+            def withinOneStep: Boolean = {
+              val (ax, ay) = (cell.dx, cell.dy)
+              val (bx, by) = (potentialNeighbor.dx, potentialNeighbor.dy)
+              (ax - bx).abs <= 1 && (ay - by).abs <= 1
+            }
+            potentialNeighbor.isAccessible && withinOneStep
+          }
+          view.cells.filter(isNeighbor)
+        }
+        for {
+          v <- view.cells
+          neighbor <- neighborsOf(v)
+          _ = graph.addEdge(v, neighbor)
+        } yield ()
+      }
+      addAllVertices
+      addAllEdges
+      graph
+    }
     type Fitness = Double
     implicit val moveOrdering = new Ordering[(Cell, Fitness)] {
       override def compare(a: (Cell, Fitness), b: (Cell, Fitness)) = a._2.compareTo(b._2)
     }
+    def explore = MoveTo(whereIAm) // TODO
     def bestMove: MoveTo = {
       val cellsWithBenefit = view.cells.filter(_.points > 0)
       if (cellsWithBenefit.isEmpty) {
-        // do random walk!
         implicit def shuffle(l: Seq[Cell]) = new {
           def shuffle: Seq[Cell] = {
             import scala.collection.JavaConverters._
-            val cells = new java.util.ArrayList[Cell](l.asJava)
-            java.util.Collections.shuffle(cells)
-            cells.asScala
+            import java.util._
+            val jList = new ArrayList(l.asJava)
+            Collections.shuffle(jList)
+            jList.asScala
           }
         }
-        implicit val FurthestCell = new Ordering[Cell] {
-          def compare(a: Cell, b: Cell) = {
-            val masterLoc = (0, 0)
-            val aDist = euclideanDistance(masterLoc, (a.dx, a.dy))
-            val bDist = euclideanDistance(masterLoc, (b.dx, b.dy))
-            aDist.compareTo(bDist)
-          }
-        }
-        val randomCell = view.cells.filter(_.isAccessible).shuffle.max
-        MoveTo(randomCell)
+        // TODO: something more sophisticated than a random jump
+        val destination = view.cells.filter(_.isAccessible).shuffle(0)
+        createMove(destination)
       } else {
         val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
-        val (cell, highestPayoff) = cellsWithFitness.max
-        MoveTo(cell)
+        val (destination, withHighestPayoff) = cellsWithFitness.max
+        createMove(destination)
       }
+    }
+    private def createMove(destination: Cell): MoveTo = {
+      // theoretically this could return null but I don't think that will happen 
+      // given that the graph should only consist of accessible points
+      import org.jgrapht.alg._
+      import scala.collection.JavaConverters._
+      val bestPath = DijkstraShortestPath.findPathBetween(graph, whereIAm, destination)
+      val Edge(src, dest) = bestPath.asScala(0)
+      MoveTo(dest)
     }
     private def fitness(cell: Cell): Fitness = {
       // should also tak into consideration the distance between the bot and the cell
