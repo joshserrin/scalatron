@@ -171,20 +171,32 @@ object JoshBot {
           val bDist = euclideanDistance(origin, bCoords)
           aDist > bDist
         }
-        val destination = view.cells.filter(_.isAccessible).sortWith(furthestFirst)(0)
-        Explore(destination)
+        implicit def shuffle(l: Seq[Cell]) = new {
+          def shuffle: Seq[Cell] = {
+            import java.util._
+            import scala.collection.JavaConverters._
+            val jlist = new ArrayList(l.asJava)
+            Collections.shuffle(jlist)
+            jlist.asScala
+          }
+        }
+        val destination = view.cells.filter(_.isAccessible).shuffle.sortWith(furthestFirst)(0)
+        Explore(stepTowards(destination))
       } else {
         val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
         val (destination, withHighestPayoff) = cellsWithFitness.max
-
-        // theoretically this could return null but I don't think that will happen 
-        // given that the graph should only consist of accessible points
-        import org.jgrapht.alg._
-        import scala.collection.JavaConverters._
-        val bestPath = DijkstraShortestPath.findPathBetween(graph, whereIAm, destination)
-        val Edge(src, dest) = bestPath.asScala(0)
-        Hunt(dest)
+        Hunt(stepTowards(destination))
       }
+    }
+
+    private def stepTowards(destination: Cell): Cell = {
+      // theoretically this could return null but I don't think that will happen 
+      // given that the graph should only consist of accessible points
+      import org.jgrapht.alg._
+      import scala.collection.JavaConverters._
+      val bestPath = DijkstraShortestPath.findPathBetween(graph, whereIAm, destination)
+      val Edge(src, dest) = bestPath.asScala(0)
+      dest
     }
     private def fitness(cell: Cell): Fitness = {
       // should also tak into consideration the distance between the bot and the cell
