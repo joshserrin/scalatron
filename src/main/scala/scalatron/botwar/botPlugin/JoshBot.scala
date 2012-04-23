@@ -106,8 +106,14 @@ object JoshBot {
     def isMaster = s == "M"
     def isUnknown = s == "?"
   }
-  case class MoveTo(cell: Cell) {
-    def toResponse: String = "Move(dx=%s,dy=%s)".format(cell.dx, cell.dy)
+  trait MoveTo {
+    def toResponse: String
+  }
+  case class Explore(cell: Cell) extends MoveTo {
+    override def toResponse = "Move(dx=%s,dy=%s)|Say(text=Exploring)".format(cell.dx, cell.dy)
+  }
+  case class Hunt(cell: Cell) extends MoveTo {
+    override def toResponse = "Move(dx=%s,dy=%s)|Say(text=Hunting)".format(cell.dx, cell.dy)
   }
   /**
    * Determines where to go to next.  First the highest values and closest items
@@ -166,21 +172,19 @@ object JoshBot {
           aDist > bDist
         }
         val destination = view.cells.filter(_.isAccessible).sortWith(furthestFirst)(0)
-        MoveTo(destination)
+        Explore(destination)
       } else {
         val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
         val (destination, withHighestPayoff) = cellsWithFitness.max
-        createMove(destination)
+
+        // theoretically this could return null but I don't think that will happen 
+        // given that the graph should only consist of accessible points
+        import org.jgrapht.alg._
+        import scala.collection.JavaConverters._
+        val bestPath = DijkstraShortestPath.findPathBetween(graph, whereIAm, destination)
+        val Edge(src, dest) = bestPath.asScala(0)
+        Hunt(dest)
       }
-    }
-    private def createMove(destination: Cell): MoveTo = {
-      // theoretically this could return null but I don't think that will happen 
-      // given that the graph should only consist of accessible points
-      import org.jgrapht.alg._
-      import scala.collection.JavaConverters._
-      val bestPath = DijkstraShortestPath.findPathBetween(graph, whereIAm, destination)
-      val Edge(src, dest) = bestPath.asScala(0)
-      MoveTo(dest)
     }
     private def fitness(cell: Cell): Fitness = {
       // should also tak into consideration the distance between the bot and the cell
