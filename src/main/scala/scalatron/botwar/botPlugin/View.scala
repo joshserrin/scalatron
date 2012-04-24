@@ -9,16 +9,18 @@ case class View(view: String) {
     val rowLength = Math.sqrt(view.length).intValue
     val halfRowLength = rowLength / 2
     def delta(i: Int): Int = if (i < halfRowLength) -(halfRowLength - i) else i - halfRowLength
+    //    println("============")
     for {
       row <- 0 to rowLength - 1
       dy = delta(row)
       startRowIndex = row * rowLength
       endRowIndex = startRowIndex + rowLength - 1
       rowString = view.substring(startRowIndex, endRowIndex)
+      //      _ = println(rowString)
       column <- 0 to rowString.length - 1
       cellContents = rowString.charAt(column).toString
       dx = delta(column)
-    } yield (new Cell(cellContents, dx, dy, this))
+    } yield (new Cell(cellContents, dx, dy))
   }
   val whereIAm: Cell = cells.find(c => c.dx == 0 && c.dy == 0).get
   def canMoveTo(dx: Int, dy: Int): Boolean =
@@ -50,8 +52,7 @@ case class View(view: String) {
       for {
         v <- cells
         neighbor <- neighborsOf(v)
-        _ = graph.addEdge(v, neighbor)
-      } yield ()
+      } yield (graph.addEdge(v, neighbor))
     }
     addAllVertices
     addAllEdges

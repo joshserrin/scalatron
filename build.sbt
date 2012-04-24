@@ -1,6 +1,3 @@
-import AssemblyKeys._
-
-assemblySettings
 
 name := "cra_scalatron-jls"
 
