@@ -14,7 +14,8 @@ object JoshBot {
   val ReactBot = """React\(entity=(.+),time=(\d+),energy=(.+),dx=(.+),dy=(.+),view=(.+)\)""".r
   val Goodbye = """Goodbye\(energy=(.+)\)""".r
 
-  private val bots = Seq(MasterBot, MissileLauncher, Missile)
+  //  private val bots = Seq(MasterBot, MissileLauncher, Missile)
+  private val bots = Seq(MasterBot)
   def respond(worldState: String): String =
     bots.map(_.respond(worldState)).filterNot(_.isEmpty).mkString("|")
 
@@ -22,13 +23,14 @@ object JoshBot {
     def respond(worldState: String): String
   }
   object MasterBot extends Bot {
+    private val explorer: Explorer = new Explorer
     /**
      * the number of EU's to be received if the Master lands on this cell
      */
     private def pointsCalc(cell: Cell): Double = {
       import cell._
       if (!isAccessible) Double.NegativeInfinity // Can't reach it, maybe blocked by walls?
-      if (isMyMiniBot) 0 // mini-bot disappears, energy added to bot
+      else if (isMyMiniBot) 0 // mini-bot disappears, energy added to bot
       else if (isWall) -10 // bonk, stunned for 4 cycles, loses 10 EU
       else if (isEmpty) 0 // small benefit to move // FIXME this will cause us to bounce around.  If nothing else is available, intelligently move to some random location!
       else if (isZugar) 100 // +100, plant disappears
@@ -41,8 +43,16 @@ object JoshBot {
       else 0 // isUnknown
     }
     override def respond(worldState: String): String = worldState match {
-      case React(entity, time, view, energy) =>
-        Navigator(View(view), pointsCalc).bestMove.toResponse
+      case React(entity, time, viewString, energy) => {
+        val view = View(viewString)
+        Hunter(pointsCalc).move(view) match {
+          case Some(moveTo) => moveTo.toResponse
+          case _ => {
+            // nothing of interest to hunt towards.  Move to explorer
+            explorer.move(view).map(_.toResponse).getOrElse("Status(text=Unknown)")
+          }
+        }
+      }
       case _ => ""
     }
   }
@@ -73,12 +83,19 @@ object JoshBot {
       else if (isWall) -10
       else 0
     }
+    var navigator: Navigator = new Hunter(pointsCalc)
     override def respond(worldState: String): String = worldState match {
       case ReactBot(entity, time, energy, dx, dy, viewString) if entity == ID => {
         val view = View(viewString)
         withinExplosionProximityToEnemy(view) match {
           case Some(distance) => Explode(distance.toInt).toResponse
-          case None => Navigator(view, pointsCalc).bestMove.toResponse
+          case None => navigator.move(view) match {
+            case Some(moveTo) => moveTo.toResponse
+            case None => {
+              navigator = new Explorer
+              navigator.move(view).map(_.toResponse).getOrElse("Status(text=Unknown)")
+            }
+          }
         }
       }
       case _ => ""

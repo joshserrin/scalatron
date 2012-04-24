@@ -1,9 +1,14 @@
 package scalatron.botwar.botPlugin
+import org.jgrapht._
+import org.jgrapht.graph._
 
 /**
  * This is basically a 2D space where the MasterBot's location is the center
  * (0,0).  All cells are deltas from the master's location.
  */
+case class Edge(src: Cell, dest: Cell) extends DefaultWeightedEdge {
+  override def getWeight: Double = 1 // Nonsense weight for now
+}
 case class View(view: String) {
   val cells: Seq[Cell] = {
     val rowLength = Math.sqrt(view.length).intValue
@@ -26,11 +31,6 @@ case class View(view: String) {
   def canMoveTo(dx: Int, dy: Int): Boolean =
     cells.find(cell => cell.dx == dx && cell.dy == dy).map(_.isAccessible).getOrElse(false)
 
-  import org.jgrapht._
-  import org.jgrapht.graph._
-  case class Edge(src: Cell, dest: Cell) extends DefaultWeightedEdge {
-    override def getWeight: Double = 1 // Nonsense weight for now
-  }
   val graph: Graph[Cell, Edge] = {
     class MyEdgeFactory extends EdgeFactory[Cell, Edge] {
       override def createEdge(src: Cell, dest: Cell): Edge = new Edge(src, dest)

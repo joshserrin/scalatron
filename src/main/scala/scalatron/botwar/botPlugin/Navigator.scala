@@ -16,43 +16,50 @@ case class Explode(size: Int) {
  * Determines where to go to next.  First the highest values and closest items
  * are considered.  If nothing is value is seen this tries to explore the area.
  */
-case class Navigator(view: View, pointsCalc: Cell => Double) {
-  import view._
+trait Navigator {
   type Fitness = Double
   implicit val moveOrdering = new Ordering[(Cell, Fitness)] {
     override def compare(a: (Cell, Fitness), b: (Cell, Fitness)) = a._2.compareTo(b._2)
   }
-  def bestMove: MoveTo = {
-    val cellsWithBenefit = cells.filter(pointsCalc(_) > 0)
-    if (cellsWithBenefit.isEmpty) {
-      // TODO: something more sophisticated than a random jump
-      // Shuffle so that we don't always value certain quadrants
-      def furthestFirst(a: Cell, b: Cell): Boolean = distance(whereIAm, a) > distance(whereIAm, b)
-      val destination = cells.filter(_.isAccessible).shuffle.sortWith(furthestFirst)(0)
-      //      println("Explore")
-      Explore(stepTowards(destination))
-    } else {
-      val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
-      val (destination, withHighestPayoff) = cellsWithFitness.max
-      //      println("Hunt")
-      Hunt(stepTowards(destination))
-    }
-  }
-  private def stepTowards(destination: Cell): Cell = {
+  def move(view: View): Option[MoveTo]
+  def stepTowards(view: View, destination: Cell): Option[Cell] = {
     // theoretically this could return null but I don't think that will happen 
     // given that the graph should only consist of accessible points
     import org.jgrapht.alg._
     import scala.collection.JavaConverters._
-    //    println("Calculating best path from %s to %s".format(whereIAm, destination))
-    val bestPath = DijkstraShortestPath.findPathBetween(graph, whereIAm, destination)
-//    println("bestPath: " + bestPath)
-    val Edge(src, dest) = bestPath.asScala(0)
-    dest
+    val bestPath = DijkstraShortestPath.findPathBetween(view.graph, view.whereIAm, destination)
+    if (null == bestPath) None
+    else {
+      val Edge(src, dest) = bestPath.asScala(0)
+      Some(dest)
+    }
   }
-  private def fitness(cell: Cell): Fitness = {
+}
+case class Hunter(pointsCalc: Cell => Double) extends Navigator {
+  def move(view: View): Option[MoveTo] = {
+    val cellsWithBenefit = view.cells.filter(pointsCalc(_) > 0)
+    if (cellsWithBenefit.isEmpty) {
+      None
+    } else {
+      val cellsWithFitness = cellsWithBenefit.map(c => (c, fitness(c)))
+      val (destination, withHighestPayoff) = cellsWithFitness.max
+      stepTowards(view, destination).map(Hunt(_))
+    }
+  }
+  def fitness(cell: Cell): Fitness = {
     // should also take into consideration the distance between the bot and the cell
     def distance: Double = euclideanDistance((0, 0), (cell.dx, cell.dy))
     def normalized(points: Double): Double = points / distance
     normalized(pointsCalc(cell))
+  }
+}
+case class Explorer extends Navigator {
+  override def move(view: View): Option[MoveTo] = {
+    // TODO: something more sophisticated than a random jump
+    // Shuffle so that we don't always value certain quadrants
+    def furthestFirst(a: Cell, b: Cell): Boolean =
+      distance(view.whereIAm, a) > distance(view.whereIAm, b)
+    val destination = view.cells.filter(_.isAccessible).shuffle.sortWith(furthestFirst)(0)
+    stepTowards(view, destination).map(Explore(_))
   }
 }
