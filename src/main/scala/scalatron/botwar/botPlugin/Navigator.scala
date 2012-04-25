@@ -60,7 +60,8 @@ case class Hunter(pointsCalc: Cell => Double) extends Navigator {
  * anymore, and then switch directions.  As long as the bot is trying to find a
  * better move and uses this Explorer only when a good move isn't available this
  * should work better than random exploring which usually causes the bot to jump
- * around.
+ * around.  Also, as the state of the map changes I don't want to try and store
+ * what I've seen to prevent myself from going there twice (using DFS or BFS).
  */
 case class Explorer extends Navigator {
   // The direction that the bot will step towards.  If the step isn't available
@@ -73,15 +74,12 @@ case class Explorer extends Navigator {
       case Some(cell) if !cell.isAccessible => {
         // change direction clockwise
         stepDirection = stepDirection match {
-          case (0, -1) => (-1, -1)
           // case (0, 0) => // should never happen!
-          case (0, 1) => (1, 1)
-          case (-1, -1) => (-1, 0)
-          case (-1, 0) => (-1, 1)
           case (-1, 1) => (0, 1)
           case (1, -1) => (0, -1)
-          case (1, 0) => (1, -1)
-          case (1, 1) => (1, 0)
+          case (-1, dy) => (-1, dy + 1) //(-1, 0) => (-1, 1) and (-1, -1) => (-1, 0)
+          case (0, dy) => (dy, dy) // (0, -1) => (-1, -1) and (0, 1) => (1, 1)
+          case (1, dy) => (1, dy - 1) // (1, 0) => (1, -1) and (1, 1) => (1, 0)
         }
         move(view)
       }
