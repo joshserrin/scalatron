@@ -9,6 +9,10 @@ import org.jgrapht.graph._
 case class Edge(src: Cell, dest: Cell) extends DefaultWeightedEdge {
   override def getWeight: Double = 1 // Nonsense weight for now
 }
+// TODO =======================================================================
+// Consider using JUNG (http://jung.sourceforge.net/).  There are a lot of nice
+// clustering algorithms already created.
+// ============================================================================
 case class View(view: String) {
   val cells: Seq[Cell] = {
     val rowLength = Math.sqrt(view.length).intValue

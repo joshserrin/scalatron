@@ -15,12 +15,20 @@ object JoshBot {
   val Goodbye = """Goodbye\(energy=(.+)\)""".r
 
   //  private val bots = Seq(MasterBot, MissileLauncher, Missile)
-  private val bots = Seq(MasterBot)
+  private val bots = Seq(GameKeeper, MasterBot)
   def respond(worldState: String): String =
     bots.map(_.respond(worldState)).filterNot(_.isEmpty).mkString("|")
 
   trait Bot {
     def respond(worldState: String): String
+  }
+  object GameKeeper extends Bot {
+    private var name: String = ""
+    override def respond(worldState: String): String = worldState match {
+      case Welcome(name, path, apocalypse, round) => this.name = name; ""
+      case Goodbye(energy) => println("Game ended.  %s ended with %s energy!".format(name, energy)); ""
+      case _ => "" // do nothing
+    }
   }
   object MasterBot extends Bot {
     private val explorer: Explorer = new Explorer

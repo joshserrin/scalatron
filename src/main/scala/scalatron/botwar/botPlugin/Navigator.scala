@@ -53,13 +53,39 @@ case class Hunter(pointsCalc: Cell => Double) extends Navigator {
     normalized(pointsCalc(cell))
   }
 }
+/**
+ * This is a very simple, non-optimal explorer based off of the Random mouse algorithm
+ * described at http://en.wikipedia.org/wiki/Maze_solving_algorithm#Pledge_algorithm.
+ * The goal is to head in a single direction until you can't head in that direction
+ * anymore, and then switch directions.  As long as the bot is trying to find a
+ * better move and uses this Explorer only when a good move isn't available this
+ * should work better than random exploring which usually causes the bot to jump
+ * around.
+ */
 case class Explorer extends Navigator {
+  // The direction that the bot will step towards.  If the step isn't available
+  // try stepping in a different direction
+  private var stepDirection: (Int, Int) = (1, 0)
   override def move(view: View): Option[MoveTo] = {
-    // TODO: something more sophisticated than a random jump
-    // Shuffle so that we don't always value certain quadrants
-    def furthestFirst(a: Cell, b: Cell): Boolean =
-      distance(view.whereIAm, a) > distance(view.whereIAm, b)
-    val destination = view.cells.filter(_.isAccessible).shuffle.sortWith(furthestFirst)(0)
-    stepTowards(view, destination).map(Explore(_))
+    val (dx, dy) = stepDirection
+    view.cells.find(c => c.dx == dx && c.dy == dy) match {
+      case Some(cell) if cell.isAccessible => Some(Explore(cell))
+      case Some(cell) if !cell.isAccessible => {
+        // change direction clockwise
+        stepDirection = stepDirection match {
+          case (0, -1) => (-1, -1)
+          // case (0, 0) => // should never happen!
+          case (0, 1) => (1, 1)
+          case (-1, -1) => (-1, 0)
+          case (-1, 0) => (-1, 1)
+          case (-1, 1) => (0, 1)
+          case (1, -1) => (0, -1)
+          case (1, 0) => (1, -1)
+          case (1, 1) => (1, 0)
+        }
+        move(view)
+      }
+      case _ => throw new IllegalStateException("Should be able to find cell is single direction but did not")
+    }
   }
 }
