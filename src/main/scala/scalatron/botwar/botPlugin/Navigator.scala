@@ -9,9 +9,6 @@ case class Explore(cell: Cell) extends MoveTo {
 case class Hunt(cell: Cell) extends MoveTo {
   override def toResponse = "Move(dx=%s,dy=%s)|Status(text=Hunting)".format(cell.dx, cell.dy)
 }
-case class Explode(size: Int) {
-  def toResponse = "Explode(size=%s)".format(size)
-}
 /**
  * Determines where to go to next.  First the highest values and closest items
  * are considered.  If nothing is value is seen this tries to explore the area.
